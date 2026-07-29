@@ -101,7 +101,8 @@ Two more things worth doing on the iPad:
 - Finished tasks dim and move to the end. They never disappear, so a mistake
   can be undone by tapping again.
 - In the big view: swipe or use the arrows to move between tasks, pinch to zoom
-  in on a detail, double tap to zoom back out, swipe down or tap ✕ to close.
+  in on a detail, double tap to zoom back out, and tap **Back** at the top left
+  to return to the board — that button works even when zoomed right in.
 - `From last time` on a card means it was not finished at the last visit.
 
 There is nothing here that can delete a task or reach the admin screen.
@@ -115,8 +116,31 @@ version of it is stored, so it cannot be read back out of the iPad — **write i
 down somewhere**. Five wrong tries locks the keypad for a minute. Admin returns
 to the board by itself after five minutes of being left alone.
 
-**Tasks.** Every visit (repeating) and This visit only (one-off). Edit, delete,
-or hold the grip on the right of a row and drag to reorder.
+**Rooms.** Every task belongs to a room, and the board is grouped into
+sections in this order: Bathroom, Toilet, Kitchen, Bedroom, Living area, Guest
+room, Work desk. Each heading carries its own count, so the cleaner can finish
+one room before moving on. Rooms with nothing in them are not shown, and a task
+with no room set appears under "Other" at the bottom.
+
+To change the list of rooms, edit this one line near the top of the script in
+`index.html` and nothing else:
+
+```js
+const ROOMS = ['Bathroom', 'Toilet', 'Kitchen', 'Bedroom', 'Living area', 'Guest room', 'Work desk'];
+```
+
+The order in that line is the order they appear on the board.
+
+**Tasks.** Three groups: Every visit (repeating), This visit only (one-off),
+and Not on the board. Edit, delete, or hold the six-dot grip at the right of a
+row and drag to reorder.
+
+**Not on the board.** Tasks that are kept but hidden from the cleaner. The
+downward arrow on any row moves it here; the upward arrow puts it back on the
+board, unticked, at the end of the list. Finished one-off tasks land here
+automatically when you start a new visit, so a job you might want again in six
+months is never thrown away and never needs re-photographing. Deleting from
+this list is the only thing that removes a task for good.
 
 **Add task.** Take a photo, or choose one from the library — usually easier, as
 you can AirDrop photos from a phone to the iPad first. Photos are shrunk on the
@@ -128,7 +152,7 @@ swallow the caption.
 
 - unticks every repeating task,
 - keeps unfinished one-offs and marks them `From last time`,
-- deletes one-offs that were finished.
+- moves finished one-offs to **Not on the board**, ready to use again.
 
 Nothing ever resets on a timer. Visits are irregular, and an automatic reset on
 the wrong day would wipe the board in the middle of a clean. If it has been
