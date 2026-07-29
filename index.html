@@ -1,0 +1,2199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Locked scale: this is a kiosk-style app on a fixed iPad. Page zoom would only get in the way. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Cleaning board</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#14161A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Cleaning">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<style>
+/* ------------------------------------------------------------------
+   Palette. Only one colour carries meaning: --green means "done".
+   ------------------------------------------------------------------ */
+:root{
+  --bg:#14161A;
+  --panel:#1B1E23;
+  --panel-2:#23272E;
+  --line:#2C3138;
+  --text:#F5F3EF;
+  --muted:#8A9099;
+  --green:#4E9A6B;
+  --green-deep:#3B7B53;
+  --r:14px;
+  --sat:env(safe-area-inset-top);
+  --sab:env(safe-area-inset-bottom);
+  --sal:env(safe-area-inset-left);
+  --sar:env(safe-area-inset-right);
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;margin:0;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:20px;
+  line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+  -webkit-text-size-adjust:100%;
+  overscroll-behavior:none;
+  overflow:hidden;
+}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;}
+input,textarea{font:inherit;color:inherit;}
+[hidden]{display:none !important;}
+img{display:block;}
+
+/* Anything text-like never drops below 17px. */
+.small{font-size:17px;}
+.muted{color:var(--muted);}
+
+/* ================= Board ================= */
+#boardScreen{display:flex;flex-direction:column;height:100%;}
+
+#boardHeader{
+  flex:none;
+  padding:calc(var(--sat) + 12px) calc(var(--sar) + 18px) 12px calc(var(--sal) + 18px);
+  border-bottom:1px solid var(--line);
+  display:flex;align-items:center;gap:18px;
+}
+#progressText{font-size:20px;font-weight:600;flex:none;}
+#progressTrack{flex:1;height:6px;border-radius:3px;background:var(--panel-2);overflow:hidden;}
+#progressFill{height:100%;width:0;background:var(--green);border-radius:3px;transition:width .35s cubic-bezier(.2,.7,.2,1);}
+#gearBtn{
+  flex:none;width:52px;height:52px;margin:-14px -12px -14px 0;
+  display:grid;place-items:center;color:var(--muted);opacity:.5;
+}
+#gearBtn svg{width:24px;height:24px;}
+
+#boardScroll{
+  flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding:16px calc(var(--sar) + 16px) calc(var(--sab) + 24px) calc(var(--sal) + 16px);
+}
+
+#allDonePanel{
+  background:rgba(78,154,107,.14);
+  border:1px solid rgba(78,154,107,.45);
+  border-radius:var(--r);
+  padding:26px 24px;margin-bottom:16px;
+  font-size:26px;font-weight:600;color:var(--text);
+  display:flex;align-items:center;gap:16px;
+}
+#allDonePanel .tickMark{color:var(--green);flex:none;}
+#allDonePanel svg{width:34px;height:34px;}
+
+#setupHint{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:18px 20px;margin-bottom:16px;color:var(--muted);font-size:17px;
+}
+
+#emptyState{padding:56px 8px;color:var(--muted);font-size:20px;}
+
+#grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;}
+@media (orientation:landscape){#grid{grid-template-columns:repeat(3,1fr);}}
+
+.card{
+  position:relative;aspect-ratio:4/3;border-radius:var(--r);overflow:hidden;
+  background:var(--panel);
+  transition:opacity .3s ease;
+}
+.card>.photo{width:100%;height:100%;object-fit:cover;}
+.card .tapArea{position:absolute;inset:0;}
+.card .scrim{
+  position:absolute;left:0;right:0;bottom:0;pointer-events:none;
+  padding:52px 16px 14px;
+  background:linear-gradient(to top,rgba(0,0,0,.88),rgba(0,0,0,.55) 42%,rgba(0,0,0,0));
+}
+.card .caption{font-size:26px;font-weight:600;line-height:1.2;}
+.card.isDone{opacity:.45;}
+
+.stateBtn{
+  position:absolute;top:6px;right:6px;width:60px;height:60px;
+  display:grid;place-items:center;
+}
+.stateBtn .ring{
+  width:44px;height:44px;border-radius:50%;
+  border:3px solid rgba(245,243,239,.9);
+  background:rgba(0,0,0,.28);
+  display:grid;place-items:center;
+  transition:background .2s ease,border-color .2s ease;
+}
+.card.isDone .stateBtn .ring{background:var(--green);border-color:var(--green);}
+.stateBtn svg{width:26px;height:26px;opacity:0;transition:opacity .2s ease;}
+.card.isDone .stateBtn svg{opacity:1;}
+
+.carriedBadge{
+  position:absolute;top:14px;left:14px;
+  font-size:17px;font-weight:500;
+  padding:5px 12px;border-radius:999px;
+  background:rgba(20,22,26,.72);color:var(--text);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  pointer-events:none;
+}
+
+/* ================= Big view ================= */
+#viewer{
+  position:fixed;inset:0;z-index:60;background:#0B0C0E;
+  display:flex;flex-direction:column;
+}
+#viewerTop{
+  flex:none;display:flex;align-items:center;justify-content:space-between;
+  padding:calc(var(--sat) + 8px) calc(var(--sar) + 8px) 8px calc(var(--sal) + 8px);
+}
+#viewerCount{font-size:20px;color:var(--muted);padding-left:12px;}
+#closeViewer{width:64px;height:64px;display:grid;place-items:center;color:var(--text);}
+#closeViewer svg{width:30px;height:30px;}
+
+#stage{
+  flex:1;position:relative;overflow:hidden;touch-action:none;min-height:0;
+}
+#stagePhoto{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:contain;
+  transform-origin:center center;will-change:transform;
+}
+.chev{
+  position:absolute;top:50%;transform:translateY(-50%);
+  width:64px;height:96px;display:grid;place-items:center;
+  color:var(--text);background:rgba(11,12,14,.42);border-radius:12px;
+}
+.chev svg{width:30px;height:30px;}
+#prevBtn{left:8px;}
+#nextBtn{right:8px;}
+
+#viewerText{
+  flex:none;padding:18px calc(var(--sar) + 22px) 12px calc(var(--sal) + 22px);
+}
+#viewerCaption{font-size:26px;font-weight:600;line-height:1.25;}
+#viewerNotes{margin-top:8px;font-size:20px;font-weight:400;color:var(--muted);line-height:1.5;}
+
+#doneBar{
+  flex:none;padding:0 calc(var(--sar) + 16px) calc(var(--sab) + 16px) calc(var(--sal) + 16px);
+}
+#doneBtn{
+  width:100%;min-height:76px;border-radius:var(--r);
+  background:var(--panel-2);border:1px solid var(--line);
+  font-size:22px;font-weight:600;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  transition:background .2s ease,border-color .2s ease;
+}
+#doneBtn.isDone{background:var(--green-deep);border-color:var(--green);}
+#doneBtn .sub{font-size:17px;font-weight:500;opacity:.8;}
+
+/* ================= Admin ================= */
+#adminScreen{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column;}
+#adminHeader{
+  flex:none;display:flex;align-items:center;gap:12px;
+  padding:calc(var(--sat) + 10px) calc(var(--sar) + 16px) 10px calc(var(--sal) + 16px);
+  border-bottom:1px solid var(--line);
+}
+#adminHeader h1{font-size:22px;font-weight:600;margin:0;flex:1;}
+#adminScroll{
+  flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding:16px calc(var(--sar) + 16px) calc(var(--sab) + 60px) calc(var(--sal) + 16px);
+}
+.section{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);
+  padding:20px;margin-bottom:16px;
+}
+.section h2{font-size:22px;font-weight:600;margin:0 0 4px;}
+.section .hint{color:var(--muted);font-size:17px;margin:0 0 16px;}
+
+.btn{
+  min-height:62px;padding:0 22px;border-radius:12px;
+  background:var(--panel-2);border:1px solid var(--line);
+  font-size:20px;font-weight:600;
+  display:inline-flex;align-items:center;justify-content:center;gap:10px;
+}
+.btn.wide{width:100%;}
+.btn.primary{background:var(--green-deep);border-color:var(--green);}
+.btn.tall{min-height:74px;font-size:22px;}
+.btn.quiet{background:transparent;}
+.btnRow{display:flex;gap:12px;flex-wrap:wrap;}
+
+#visitAge{font-size:20px;margin:0 0 16px;color:var(--muted);}
+#visitAge.stale{
+  color:var(--text);background:var(--panel-2);
+  border:1px solid var(--line);border-radius:10px;padding:12px 16px;
+}
+
+/* Task rows. Fixed height keeps drag-to-reorder maths simple and predictable. */
+.groupLabel{font-size:17px;font-weight:600;color:var(--muted);margin:20px 0 8px;}
+.groupLabel:first-child{margin-top:0;}
+.taskList{position:relative;}
+.arow{
+  height:92px;display:flex;align-items:center;gap:14px;
+  border-bottom:1px solid var(--line);
+  background:var(--panel);
+  will-change:transform;
+}
+.arow.dragging{
+  background:var(--panel-2);border-radius:10px;border-bottom-color:transparent;
+  z-index:5;position:relative;box-shadow:0 8px 24px rgba(0,0,0,.5);
+}
+.arow .thumb{width:72px;height:72px;border-radius:10px;object-fit:cover;background:var(--panel-2);flex:none;}
+.arow .rowCap{
+  flex:1;min-width:0;font-size:20px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.arow .rowCap .rowNote{display:block;font-size:17px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;}
+.iconBtn{width:62px;height:62px;flex:none;display:grid;place-items:center;color:var(--muted);}
+.iconBtn svg{width:24px;height:24px;}
+.handle{touch-action:none;}
+.emptyGroup{color:var(--muted);font-size:17px;padding:14px 0;}
+
+/* Add / edit form */
+.field{margin-bottom:18px;}
+.field label{display:block;font-size:17px;font-weight:600;color:var(--muted);margin-bottom:8px;}
+.field input[type=text],.field textarea{
+  width:100%;min-height:62px;padding:14px 16px;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:12px;
+  font-size:20px;
+}
+.field textarea{min-height:104px;resize:vertical;line-height:1.45;}
+.counter{font-size:17px;color:var(--muted);margin-top:8px;}
+.counter.warn{color:var(--text);font-weight:600;}
+
+.toggle{display:flex;gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+.toggle button{
+  flex:1;min-height:62px;font-size:20px;font-weight:600;
+  background:var(--panel-2);color:var(--muted);
+}
+.toggle button.on{background:var(--text);color:#14161A;}
+
+.formLayout{display:grid;gap:24px;}
+@media (orientation:landscape){.formLayout{grid-template-columns:1fr 320px;align-items:start;}}
+.previewWrap{position:sticky;top:0;}
+.previewWrap .previewLabel{font-size:17px;color:var(--muted);margin-bottom:8px;}
+.previewCard{
+  position:relative;aspect-ratio:4/3;border-radius:var(--r);overflow:hidden;background:var(--panel-2);
+}
+.previewCard .photo{width:100%;height:100%;object-fit:cover;}
+.previewCard .placeholder{
+  position:absolute;inset:0;display:grid;place-items:center;
+  color:var(--muted);font-size:17px;text-align:center;padding:20px;
+}
+.formError{color:var(--text);font-size:17px;font-weight:600;margin-top:12px;}
+
+/* ================= PIN gate ================= */
+#pinGate{position:fixed;inset:0;z-index:80;background:var(--bg);display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:24px;}
+#pinTitle{font-size:26px;font-weight:600;text-align:center;margin:0 0 10px;}
+#pinMsg{font-size:17px;color:var(--muted);text-align:center;margin:0 0 28px;min-height:26px;}
+#pinDots{display:flex;gap:18px;margin-bottom:34px;}
+#pinDots i{width:18px;height:18px;border-radius:50%;border:2px solid var(--muted);}
+#pinDots i.filled{background:var(--text);border-color:var(--text);}
+#pinDots.shake{animation:shake .38s ease;}
+@keyframes shake{
+  0%,100%{transform:translateX(0);}
+  20%{transform:translateX(-10px);}
+  45%{transform:translateX(9px);}
+  70%{transform:translateX(-5px);}
+}
+#pinPad{display:grid;grid-template-columns:repeat(3,96px);gap:14px;}
+#pinPad button{
+  height:82px;border-radius:14px;background:var(--panel-2);border:1px solid var(--line);
+  font-size:28px;font-weight:600;
+}
+#pinPad button.blank{background:none;border:0;}
+#pinPad[data-locked="1"] button{opacity:.3;pointer-events:none;}
+#pinCancel{margin-top:30px;min-height:62px;padding:0 28px;font-size:20px;color:var(--muted);}
+
+/* ================= Confirm dialog / toast ================= */
+#dialogBack{
+  position:fixed;inset:0;z-index:90;background:rgba(8,9,11,.72);
+  display:flex;align-items:center;justify-content:center;padding:24px;
+}
+#dialogBox{
+  background:var(--panel);border:1px solid var(--line);border-radius:18px;
+  padding:26px;max-width:520px;width:100%;
+}
+#dialogTitle{font-size:24px;font-weight:600;margin:0 0 10px;}
+#dialogBody{font-size:20px;color:var(--muted);margin:0 0 24px;line-height:1.5;}
+#dialogBtns{display:flex;flex-direction:column;gap:12px;}
+
+#toast{
+  position:fixed;left:50%;bottom:calc(var(--sab) + 28px);transform:translateX(-50%);
+  z-index:95;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:999px;padding:14px 24px;font-size:20px;
+  max-width:82vw;text-align:center;
+  transition:opacity .25s ease;
+}
+#toast[hidden]{display:block !important;opacity:0;pointer-events:none;}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms !important;transition-duration:.001ms !important;}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ Screen 1: the board (the cleaner's screen) ============ -->
+<div id="boardScreen">
+  <header id="boardHeader">
+    <span id="progressText">0 of 0 done</span>
+    <span id="progressTrack"><span id="progressFill"></span></span>
+    <button id="gearBtn" aria-label="Admin">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="3.2"/>
+        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.9 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.7 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.7 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.7a1.7 1.7 0 0 0 1.03-1.56V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.7a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.3 9v.09a1.7 1.7 0 0 0 1.56 1.03H21a2 2 0 1 1 0 4h-.09A1.7 1.7 0 0 0 19.4 15z"/>
+      </svg>
+    </button>
+  </header>
+
+  <div id="boardScroll">
+    <div id="setupHint" hidden>Set up: tap the gear in the corner to choose an admin PIN.</div>
+
+    <div id="allDonePanel" hidden>
+      <span class="tickMark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5.2 5.2L20 7"/></svg>
+      </span>
+      <span>All done. Thank you!</span>
+    </div>
+
+    <div id="grid"></div>
+    <div id="emptyState" hidden>Nothing on the board yet.</div>
+  </div>
+</div>
+
+<!-- ============ Screen 2: big view ============ -->
+<div id="viewer" hidden>
+  <div id="viewerTop">
+    <span id="viewerCount">1 / 1</span>
+    <button id="closeViewer" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+
+  <div id="stage">
+    <img id="stagePhoto" alt="">
+    <button id="prevBtn" class="chev" aria-label="Previous">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+    </button>
+    <button id="nextBtn" class="chev" aria-label="Next">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+    </button>
+  </div>
+
+  <div id="viewerText">
+    <div id="viewerCaption"></div>
+    <div id="viewerNotes"></div>
+  </div>
+
+  <div id="doneBar">
+    <button id="doneBtn"><span class="main">Mark as done</span><span class="sub" hidden></span></button>
+  </div>
+</div>
+
+<!-- ============ Screen 3: admin ============ -->
+<div id="adminScreen" hidden>
+  <header id="adminHeader">
+    <h1>Admin</h1>
+    <button class="btn quiet" id="jumpBackup">Backup</button>
+    <button class="btn" id="leaveAdmin">Back to board</button>
+  </header>
+
+  <div id="adminScroll">
+
+    <!-- Visit -->
+    <section class="section">
+      <h2>Visit</h2>
+      <p class="hint">Start a new visit when the cleaner arrives. Nothing resets on its own.</p>
+      <p id="visitAge">Current visit started today</p>
+      <button class="btn primary wide tall" id="startVisitBtn">Start new visit</button>
+    </section>
+
+    <!-- Add / edit task -->
+    <section class="section">
+      <h2 id="formTitle">Add task</h2>
+      <p class="hint" id="formHint">Pick a photo, then write a short caption.</p>
+      <div class="formLayout">
+        <div>
+          <div class="field">
+            <label>Photo</label>
+            <div class="btnRow">
+              <button class="btn" id="pickCamera">Take photo</button>
+              <button class="btn" id="pickLibrary">Choose from library</button>
+            </div>
+            <div class="counter" id="photoStatus">No photo chosen yet.</div>
+            <input type="file" id="fileCamera" accept="image/*" capture="environment" hidden>
+            <input type="file" id="fileLibrary" accept="image/*" hidden>
+          </div>
+
+          <div class="field">
+            <label for="capInput">Caption</label>
+            <input type="text" id="capInput" maxlength="90" placeholder="Mop the kitchen floor">
+            <div class="counter" id="capCounter">0 of 60 characters</div>
+          </div>
+
+          <div class="field">
+            <label for="notesInput">Notes (optional)</label>
+            <textarea id="notesInput" placeholder="Shown only in the big view."></textarea>
+          </div>
+
+          <div class="field">
+            <label>How often</label>
+            <div class="toggle" id="typeToggle">
+              <button data-type="recurring" class="on">Every visit</button>
+              <button data-type="oneoff">This visit only</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="previewWrap">
+          <div class="previewLabel">This is how the card will look</div>
+          <div class="previewCard" id="previewCard">
+            <div class="placeholder" id="previewPlaceholder">The photo will show here</div>
+            <img class="photo" id="previewPhoto" alt="" hidden>
+            <div class="scrim" style="position:absolute;left:0;right:0;bottom:0;padding:52px 16px 14px;background:linear-gradient(to top,rgba(0,0,0,.88),rgba(0,0,0,.55) 42%,rgba(0,0,0,0))">
+              <div class="caption" id="previewCaption" style="font-size:26px;font-weight:600;line-height:1.2"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="formError" id="formError" hidden></div>
+      <div class="btnRow" style="margin-top:4px">
+        <button class="btn primary" id="saveTaskBtn">Save task</button>
+        <button class="btn quiet" id="cancelEditBtn" hidden>Cancel</button>
+      </div>
+    </section>
+
+    <!-- Task list -->
+    <section class="section">
+      <h2>Tasks</h2>
+      <p class="hint">Hold the grip on the right and drag to change the order.</p>
+      <div class="groupLabel">Every visit</div>
+      <div class="taskList" id="listRecurring"></div>
+      <div class="groupLabel">This visit only</div>
+      <div class="taskList" id="listOneoff"></div>
+    </section>
+
+    <!-- Backup -->
+    <section class="section" id="backupSection">
+      <h2>Backup</h2>
+      <p class="hint">Everything lives on this iPad only. If the iPad is lost or wiped, the board is gone
+        unless you have a backup file. Export one now and again, and keep it somewhere else.</p>
+      <div class="btnRow">
+        <button class="btn primary" id="exportBtn">Export backup</button>
+        <button class="btn" id="shareBtn" hidden>Share backup</button>
+        <button class="btn" id="restoreBtn">Restore from backup</button>
+      </div>
+      <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+    </section>
+
+  </div>
+</div>
+
+<!-- ============ PIN gate ============ -->
+<div id="pinGate" hidden>
+  <h2 id="pinTitle">Enter admin PIN</h2>
+  <p id="pinMsg"></p>
+  <div id="pinDots"><i></i><i></i><i></i><i></i></div>
+  <div id="pinPad">
+    <button>1</button><button>2</button><button>3</button>
+    <button>4</button><button>5</button><button>6</button>
+    <button>7</button><button>8</button><button>9</button>
+    <button class="blank"></button><button>0</button><button data-back="1">⌫</button>
+  </div>
+  <button id="pinCancel">Cancel</button>
+</div>
+
+<!-- ============ Confirm dialog ============ -->
+<div id="dialogBack" hidden>
+  <div id="dialogBox">
+    <h2 id="dialogTitle"></h2>
+    <p id="dialogBody"></p>
+    <div id="dialogBtns">
+      <button class="btn primary wide" id="dialogOk">Yes</button>
+      <button class="btn quiet wide" id="dialogCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" hidden></div>
+
+<script>
+/* ==========================================================================
+   Cleaning board
+   Plain HTML, CSS and JavaScript. No build step, no server, no accounts.
+   All data lives in this iPad's IndexedDB.
+
+   Sections, in order:
+     1. Small helpers
+     2. IndexedDB layer
+     3. Photos (downscale, thumbnail, EXIF orientation)
+     4. Seed data
+     5. State and object URLs
+     6. Board
+     7. Big view
+     8. PIN
+     9. Admin
+    10. Visit reset
+    11. Backup
+    12. Start-up
+   ========================================================================== */
+'use strict';
+
+/* ---------------------------------------------------------------- 1. Helpers */
+
+const $ = (sel, root) => (root || document).querySelector(sel);
+const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+const reduceMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[c]));
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let toastTimer = null;
+function toast(message) {
+  const t = $('#toast');
+  t.textContent = message;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+}
+
+/* A confirm dialog we control, so it matches the rest of the app and works
+   inside a home-screen web app (where window.confirm can look alarming). */
+function confirmDialog(opts) {
+  return new Promise((resolve) => {
+    $('#dialogTitle').textContent = opts.title;
+    $('#dialogBody').textContent = opts.body || '';
+    $('#dialogOk').textContent = opts.okLabel || 'Yes';
+    $('#dialogCancel').textContent = opts.cancelLabel || 'Cancel';
+    const back = $('#dialogBack');
+    back.hidden = false;
+
+    function finish(answer) {
+      back.hidden = true;
+      $('#dialogOk').onclick = null;
+      $('#dialogCancel').onclick = null;
+      back.onclick = null;
+      resolve(answer);
+    }
+    $('#dialogOk').onclick = () => finish(true);
+    $('#dialogCancel').onclick = () => finish(false);
+    back.onclick = (e) => { if (e.target === back) finish(false); };
+  });
+}
+
+async function sha256Hex(text) {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+const newId = () => (crypto.randomUUID
+  ? crypto.randomUUID()
+  : 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10));
+
+/* ------------------------------------------------------- 2. IndexedDB layer */
+
+const DB = (() => {
+  const NAME = 'cleaningBoard';
+  const VERSION = 1;
+  let opening = null;
+
+  function open() {
+    if (opening) return opening;
+    opening = new Promise((resolve, reject) => {
+      const request = indexedDB.open(NAME, VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains('tasks')) db.createObjectStore('tasks', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta'); // plain key/value
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    return opening;
+  }
+
+  /* Wrap one IDBRequest as a promise. */
+  const wrap = (request) => new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+
+  /* Run work inside one transaction and resolve once the transaction commits. */
+  async function run(stores, mode, work) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(stores, mode);
+      let result;
+      tx.oncomplete = () => resolve(result);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
+      Promise.resolve(work(tx)).then((value) => { result = value; }, reject);
+    });
+  }
+
+  return {
+    allTasks: () => run(['tasks'], 'readonly', (tx) => wrap(tx.objectStore('tasks').getAll())),
+
+    putTask: (task) => run(['tasks'], 'readwrite', (tx) => wrap(tx.objectStore('tasks').put(task))),
+
+    putTasks: (tasks) => run(['tasks'], 'readwrite', (tx) => {
+      const store = tx.objectStore('tasks');
+      return Promise.all(tasks.map((t) => wrap(store.put(t))));
+    }),
+
+    deleteTask: (id) => run(['tasks'], 'readwrite', (tx) => wrap(tx.objectStore('tasks').delete(id))),
+
+    allMeta: () => run(['meta'], 'readonly', async (tx) => {
+      const store = tx.objectStore('meta');
+      const keys = await wrap(store.getAllKeys());
+      const values = await wrap(store.getAll());
+      const out = {};
+      keys.forEach((k, i) => { out[k] = values[i]; });
+      return out;
+    }),
+
+    setMeta: (key, value) => run(['meta'], 'readwrite', (tx) => wrap(tx.objectStore('meta').put(value, key))),
+
+    /* Used by "Restore from backup": wipe both stores, then write the backup. */
+    replaceAll: (tasks, meta) => run(['tasks', 'meta'], 'readwrite', async (tx) => {
+      const taskStore = tx.objectStore('tasks');
+      const metaStore = tx.objectStore('meta');
+      await wrap(taskStore.clear());
+      await wrap(metaStore.clear());
+      for (const task of tasks) await wrap(taskStore.put(task));
+      for (const key of Object.keys(meta)) await wrap(metaStore.put(meta[key], key));
+    })
+  };
+})();
+
+/* --------------------------------------------------------------- 3. Photos */
+
+const PHOTO_MAX_EDGE = 1600;   // longest edge of the stored photo
+const THUMB_MAX_EDGE = 400;    // longest edge of the grid thumbnail
+const JPEG_QUALITY = 0.8;
+
+class PhotoError extends Error {}
+
+/* Decode a picked file. iPad photos are large and often HEIC, and they carry
+   EXIF orientation, so decoding has to be done carefully.
+   - createImageBitmap with imageOrientation:'from-image' applies EXIF.
+   - The <img> fallback also applies EXIF (browsers default to
+     image-orientation: from-image), so both paths come out upright. */
+async function decodeImageFile(file) {
+  if (window.createImageBitmap) {
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      return { source: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close && bitmap.close() };
+    } catch (err) { /* fall through */ }
+    try {
+      const bitmap = await createImageBitmap(file);
+      return { source: bitmap, width: bitmap.width, height: bitmap.height, close: () => bitmap.close && bitmap.close() };
+    } catch (err) { /* fall through */ }
+  }
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => resolve({
+      source: img,
+      width: img.naturalWidth,
+      height: img.naturalHeight,
+      close: () => URL.revokeObjectURL(url)
+    });
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new PhotoError('Could not decode image')); };
+    img.src = url;
+  });
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    if (canvas.toBlob) {
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new PhotoError('Encoding failed'))), type, quality);
+    } else {
+      reject(new PhotoError('Encoding not supported'));
+    }
+  });
+}
+
+function drawScaled(decoded, maxEdge) {
+  const scale = Math.min(1, maxEdge / Math.max(decoded.width, decoded.height));
+  const width = Math.max(1, Math.round(decoded.width * scale));
+  const height = Math.max(1, Math.round(decoded.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(decoded.source, 0, 0, width, height);
+  return canvas;
+}
+
+/* Turn a picked file into the two JPEG blobs we store. The original is
+   never kept: a 10MB iPhone photo comes out around 200-400KB. */
+async function processPhoto(file) {
+  let decoded;
+  try {
+    decoded = await decodeImageFile(file);
+  } catch (err) {
+    throw new PhotoError('decode');
+  }
+  try {
+    if (!decoded.width || !decoded.height) throw new PhotoError('empty');
+    const photoBlob = await canvasToBlob(drawScaled(decoded, PHOTO_MAX_EDGE), 'image/jpeg', JPEG_QUALITY);
+    const thumbBlob = await canvasToBlob(drawScaled(decoded, THUMB_MAX_EDGE), 'image/jpeg', JPEG_QUALITY);
+    return { photoBlob, thumbBlob };
+  } finally {
+    try { decoded.close(); } catch (err) { /* ignore */ }
+  }
+}
+
+const PHOTO_ERROR_TEXT = 'That photo could not be read. Try taking a screenshot of it and using that instead.';
+
+/* ------------------------------------------------------------ 4. Seed data */
+
+/* Five placeholder tasks so the board is never empty on a fresh install and
+   the owner can see how it works before adding her own photos. The images are
+   drawn here rather than shipped as files, so there is nothing extra to load. */
+async function makePlaceholderPhoto(label, from, to) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1600;
+  canvas.height = 1200;
+  const ctx = canvas.getContext('2d');
+
+  const gradient = ctx.createLinearGradient(0, 0, 1600, 1200);
+  gradient.addColorStop(0, from);
+  gradient.addColorStop(1, to);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 1600, 1200);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.beginPath(); ctx.arc(1240, 320, 300, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(300, 980, 220, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.88)';
+  ctx.textAlign = 'center';
+  ctx.font = '600 76px -apple-system, Helvetica, Arial, sans-serif';
+  ctx.fillText(label, 800, 600);
+  ctx.font = '400 44px -apple-system, Helvetica, Arial, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  ctx.fillText('example photo', 800, 680);
+
+  const decoded = { source: canvas, width: 1600, height: 1200, close() {} };
+  const photoBlob = await canvasToBlob(drawScaled(decoded, PHOTO_MAX_EDGE), 'image/jpeg', JPEG_QUALITY);
+  const thumbBlob = await canvasToBlob(drawScaled(decoded, THUMB_MAX_EDGE), 'image/jpeg', JPEG_QUALITY);
+  return { photoBlob, thumbBlob };
+}
+
+const SEED = [
+  { caption: 'Mop the kitchen floor', notes: 'Behind the bin as well.', type: 'recurring', label: 'Kitchen', from: '#4A6072', to: '#2C3A47' },
+  { caption: 'Clean the bathroom sink and taps', notes: '', type: 'recurring', label: 'Bathroom', from: '#5B6E64', to: '#33413B' },
+  { caption: 'Change the bed linen', notes: 'Clean sheets are in the hallway cupboard.', type: 'recurring', label: 'Bedroom', from: '#6B6070', to: '#3E3745' },
+  { caption: 'Wipe the marks off this cupboard door', notes: 'Warm water only, no spray.', type: 'oneoff', label: 'Cupboard', from: '#75695A', to: '#443D34' },
+  { caption: 'Dust the top of the bookshelf', notes: '', type: 'recurring', label: 'Living room', from: '#4E6A6E', to: '#2E4144' }
+];
+
+async function seedIfEmpty() {
+  const existing = await DB.allTasks();
+  const meta = await DB.allMeta();
+  if (existing.length > 0 || meta.seeded) return false;
+
+  const now = Date.now();
+  const tasks = [];
+  for (let i = 0; i < SEED.length; i++) {
+    const s = SEED[i];
+    const photos = await makePlaceholderPhoto(s.label, s.from, s.to);
+    tasks.push({
+      id: newId(),
+      caption: s.caption,
+      notes: s.notes,
+      photoBlob: photos.photoBlob,
+      thumbBlob: photos.thumbBlob,
+      type: s.type,
+      done: false,
+      carriedOver: false,
+      sortIndex: i,
+      createdAt: now + i
+    });
+  }
+  await DB.putTasks(tasks);
+  await DB.setMeta('seeded', true);
+  return true;
+}
+
+/* ------------------------------------------------- 5. State and object URLs */
+
+const state = {
+  tasks: [],
+  meta: {},
+  viewer: null
+};
+
+/* Object URLs are cached per task and revoked as soon as the task is gone or
+   its photo is replaced. Creating a fresh URL on every render, or never
+   revoking, will eventually crash Safari. */
+const objectUrls = new Map(); // "<taskId>:full" | "<taskId>:thumb"  ->  blob URL
+
+function photoUrl(task, kind) {
+  const key = task.id + ':' + kind;
+  let url = objectUrls.get(key);
+  if (!url) {
+    const blob = kind === 'thumb' ? (task.thumbBlob || task.photoBlob) : task.photoBlob;
+    if (!blob) return '';
+    url = URL.createObjectURL(blob);
+    objectUrls.set(key, url);
+  }
+  return url;
+}
+
+function releasePhotoUrls(taskId) {
+  for (const kind of ['full', 'thumb']) {
+    const key = taskId + ':' + kind;
+    const url = objectUrls.get(key);
+    if (url) { URL.revokeObjectURL(url); objectUrls.delete(key); }
+  }
+}
+
+/* Drop URLs for tasks that no longer exist. */
+function pruneObjectUrls() {
+  const live = new Set(state.tasks.map((t) => t.id));
+  for (const key of Array.from(objectUrls.keys())) {
+    if (!live.has(key.slice(0, key.lastIndexOf(':')))) {
+      URL.revokeObjectURL(objectUrls.get(key));
+      objectUrls.delete(key);
+    }
+  }
+}
+
+async function loadState() {
+  state.tasks = await DB.allTasks();
+  state.meta = await DB.allMeta();
+  pruneObjectUrls();
+}
+
+/* Board order: by sortIndex, with finished tasks moved to the end. */
+function boardOrder() {
+  return state.tasks.slice().sort((a, b) => {
+    if (!!a.done !== !!b.done) return a.done ? 1 : -1;
+    return a.sortIndex - b.sortIndex;
+  });
+}
+
+const tasksOfType = (type) => state.tasks
+  .filter((t) => t.type === type)
+  .sort((a, b) => a.sortIndex - b.sortIndex);
+
+const taskById = (id) => state.tasks.find((t) => t.id === id);
+
+/* ----------------------------------------------------------------- 6. Board */
+
+const grid = $('#grid');
+const cardElements = new Map(); // taskId -> card element, so photos are never re-decoded
+
+const TICK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5.2 5.2L20 7"/></svg>';
+
+function buildCard(task) {
+  const card = document.createElement('div');
+  card.className = 'card';
+  card.dataset.id = task.id;
+  card.innerHTML =
+    '<img class="photo" alt="">' +
+    '<div class="scrim"><div class="caption"></div></div>' +
+    '<span class="carriedBadge" hidden>From last time</span>' +
+    '<button class="stateBtn" type="button"><span class="ring">' + TICK_SVG + '</span></button>' +
+    '<button class="tapArea" type="button" aria-label="Open"></button>';
+
+  /* Tapping the photo opens the big view; tapping the circle marks it done. */
+  $('.tapArea', card).addEventListener('click', () => openViewer(task.id));
+  $('.stateBtn', card).addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleDone(task.id);
+  });
+  return card;
+}
+
+function updateCard(card, task) {
+  const img = $('.photo', card);
+  const url = photoUrl(task, 'thumb');
+  if (img.getAttribute('src') !== url) img.src = url;
+  img.alt = task.caption || '';
+
+  const caption = $('.caption', card);
+  if (caption.textContent !== (task.caption || '')) caption.textContent = task.caption || '';
+
+  card.classList.toggle('isDone', !!task.done);
+  $('.carriedBadge', card).hidden = !(task.type === 'oneoff' && task.carriedOver);
+  $('.stateBtn', card).setAttribute('aria-label', task.done ? 'Mark as not done' : 'Mark as done');
+
+  /* The tap area sits above the scrim, so keep it below the circle button. */
+  $('.tapArea', card).style.zIndex = '1';
+  $('.stateBtn', card).style.zIndex = '2';
+}
+
+function renderBoard() {
+  const ordered = boardOrder();
+
+  /* FLIP: remember where every card is before the DOM changes. */
+  const before = new Map();
+  cardElements.forEach((el, id) => {
+    if (el.isConnected) before.set(id, el.getBoundingClientRect());
+  });
+
+  /* Remove cards whose task is gone. */
+  cardElements.forEach((el, id) => {
+    if (!taskById(id)) { el.remove(); cardElements.delete(id); }
+  });
+
+  /* Re-use existing elements and move them into the new order. */
+  ordered.forEach((task) => {
+    let card = cardElements.get(task.id);
+    if (!card) { card = buildCard(task); cardElements.set(task.id, card); }
+    updateCard(card, task);
+    grid.appendChild(card);
+  });
+
+  /* FLIP: animate each card from where it was to where it is now. */
+  if (!reduceMotion()) {
+    cardElements.forEach((el, id) => {
+      const old = before.get(id);
+      if (!old) return;
+      const now = el.getBoundingClientRect();
+      const dx = old.left - now.left;
+      const dy = old.top - now.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      el.animate(
+        [{ transform: 'translate(' + dx + 'px,' + dy + 'px)' }, { transform: 'none' }],
+        { duration: 380, easing: 'cubic-bezier(.2,.7,.2,1)' }
+      );
+    });
+  }
+
+  renderProgress(ordered);
+}
+
+function renderProgress(ordered) {
+  const total = ordered.length;
+  const done = ordered.filter((t) => t.done).length;
+
+  $('#progressText').textContent = done + ' of ' + total + ' done';
+  $('#progressFill').style.width = total ? (done / total * 100) + '%' : '0%';
+
+  $('#emptyState').hidden = total > 0;
+  $('#allDonePanel').hidden = !(total > 0 && done === total);
+  $('#setupHint').hidden = !!state.meta.pinHash;
+}
+
+async function toggleDone(id) {
+  const task = taskById(id);
+  if (!task) return;
+  task.done = !task.done;
+  await DB.putTask(task);
+  renderBoard();
+  if (state.viewer) renderViewer();
+}
+
+/* -------------------------------------------------------------- 7. Big view */
+
+const viewerEl = $('#viewer');
+const stage = $('#stage');
+const stagePhoto = $('#stagePhoto');
+
+const ZOOM_MAX = 4;
+const ZOOM_DOUBLE_TAP = 2.5;
+
+function currentViewerTask() {
+  if (!state.viewer) return null;
+  return taskById(state.viewer.order[state.viewer.index]) || null;
+}
+
+function openViewer(startId) {
+  /* The order is frozen while the overlay is open. If it re-sorted under her
+     finger every time she ticked something off, "3 / 9" would jump around. */
+  const order = boardOrder().map((t) => t.id);
+  const index = Math.max(0, order.indexOf(startId));
+  state.viewer = { order: order, index: index, scale: 1, tx: 0, ty: 0 };
+
+  viewerEl.hidden = false;
+  renderViewer();
+
+  const card = cardElements.get(startId);
+  if (card && !reduceMotion()) {
+    const r = card.getBoundingClientRect();
+    const scale = Math.max(r.width / window.innerWidth, r.height / window.innerHeight);
+    const ox = r.left + r.width / 2 - window.innerWidth / 2;
+    const oy = r.top + r.height / 2 - window.innerHeight / 2;
+    viewerEl.animate(
+      [
+        { transform: 'translate(' + ox + 'px,' + oy + 'px) scale(' + scale + ')', opacity: 0.35 },
+        { transform: 'none', opacity: 1 }
+      ],
+      { duration: 300, easing: 'cubic-bezier(.2,.7,.2,1)' }
+    );
+  }
+}
+
+function closeViewer() {
+  const task = currentViewerTask();
+  const card = task ? cardElements.get(task.id) : null;
+
+  const finish = () => {
+    viewerEl.hidden = true;
+    state.viewer = null;
+    stagePhoto.removeAttribute('src');
+  };
+
+  if (card && !reduceMotion()) {
+    const r = card.getBoundingClientRect();
+    const scale = Math.max(r.width / window.innerWidth, r.height / window.innerHeight);
+    const ox = r.left + r.width / 2 - window.innerWidth / 2;
+    const oy = r.top + r.height / 2 - window.innerHeight / 2;
+    const animation = viewerEl.animate(
+      [
+        { transform: 'none', opacity: 1 },
+        { transform: 'translate(' + ox + 'px,' + oy + 'px) scale(' + scale + ')', opacity: 0 }
+      ],
+      { duration: 240, easing: 'cubic-bezier(.4,.0,.6,1)' }
+    );
+    animation.onfinish = finish;
+    animation.oncancel = finish;
+  } else {
+    finish();
+  }
+}
+
+function renderViewer() {
+  const v = state.viewer;
+  if (!v) return;
+  const task = currentViewerTask();
+  if (!task) { closeViewer(); return; }
+
+  const url = photoUrl(task, 'full');
+  if (stagePhoto.getAttribute('src') !== url) stagePhoto.src = url;
+  stagePhoto.alt = task.caption || '';
+
+  $('#viewerCount').textContent = (v.index + 1) + ' / ' + v.order.length;
+  $('#viewerCaption').textContent = task.caption || '';
+  const notes = $('#viewerNotes');
+  notes.textContent = task.notes || '';
+  notes.hidden = !task.notes;
+
+  const button = $('#doneBtn');
+  const sub = $('.sub', button);
+  button.classList.toggle('isDone', !!task.done);
+  if (task.done) {
+    $('.main', button).textContent = 'Done ✓';
+    sub.textContent = 'Undo';
+    sub.hidden = false;
+  } else {
+    $('.main', button).textContent = 'Mark as done';
+    sub.hidden = true;
+  }
+
+  $('#prevBtn').hidden = v.index === 0;
+  $('#nextBtn').hidden = v.index >= v.order.length - 1;
+}
+
+/* ---- zoom and pan ---- */
+
+function applyTransform() {
+  const v = state.viewer;
+  if (!v) return;
+  stagePhoto.style.transform =
+    'translate(' + v.tx + 'px,' + v.ty + 'px) scale(' + v.scale + ')';
+}
+
+function resetZoom() {
+  const v = state.viewer;
+  if (!v) return;
+  v.scale = 1; v.tx = 0; v.ty = 0;
+  applyTransform();
+}
+
+/* The photo is drawn with object-fit: contain, so the visible picture is
+   usually smaller than the stage. Panning has to be clamped to that box. */
+function contentBox() {
+  const sw = stage.clientWidth;
+  const sh = stage.clientHeight;
+  const nw = stagePhoto.naturalWidth || 4;
+  const nh = stagePhoto.naturalHeight || 3;
+  const fit = Math.min(sw / nw, sh / nh);
+  return { w: nw * fit, h: nh * fit, sw: sw, sh: sh };
+}
+
+function clampPan() {
+  const v = state.viewer;
+  const box = contentBox();
+  const maxX = Math.max(0, (box.w * v.scale - box.sw) / 2);
+  const maxY = Math.max(0, (box.h * v.scale - box.sh) / 2);
+  v.tx = Math.min(maxX, Math.max(-maxX, v.tx));
+  v.ty = Math.min(maxY, Math.max(-maxY, v.ty));
+}
+
+/* Zoom around a point so the detail under her fingers stays put. */
+function zoomAround(nextScale, focalX, focalY) {
+  const v = state.viewer;
+  const clamped = Math.min(ZOOM_MAX, Math.max(1, nextScale));
+  const ratio = clamped / v.scale;
+  v.tx = focalX - (focalX - v.tx) * ratio;
+  v.ty = focalY - (focalY - v.ty) * ratio;
+  v.scale = clamped;
+  if (v.scale === 1) { v.tx = 0; v.ty = 0; } else { clampPan(); }
+  applyTransform();
+}
+
+function goTo(index, direction) {
+  const v = state.viewer;
+  if (!v || index < 0 || index >= v.order.length) return;
+  v.index = index;
+  resetZoom();
+  renderViewer();
+  if (!reduceMotion()) {
+    stagePhoto.animate(
+      [{ transform: 'translateX(' + (direction * 44) + 'px)', opacity: 0 }, { transform: 'none', opacity: 1 }],
+      { duration: 220, easing: 'ease-out' }
+    );
+  }
+}
+
+const stepViewer = (delta) => {
+  const v = state.viewer;
+  if (!v) return;
+  const next = v.index + delta;
+  if (next < 0 || next >= v.order.length) return;
+  goTo(next, delta > 0 ? 1 : -1);
+};
+
+/* ---- touch handling: swipe, pinch, double tap, swipe-down to close ---- */
+
+const touchState = {
+  mode: null,          // 'drag' | 'pinch' | 'pan'
+  startX: 0, startY: 0,
+  dx: 0, dy: 0,
+  startDistance: 0,
+  startScale: 1,
+  lastTapTime: 0, lastTapX: 0, lastTapY: 0
+};
+
+const twoFingerDistance = (touches) => {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.hypot(dx, dy);
+};
+
+const twoFingerMidpoint = (touches) => {
+  const rect = stage.getBoundingClientRect();
+  return {
+    x: (touches[0].clientX + touches[1].clientX) / 2 - rect.left - rect.width / 2,
+    y: (touches[0].clientY + touches[1].clientY) / 2 - rect.top - rect.height / 2
+  };
+};
+
+stage.addEventListener('touchstart', (e) => {
+  const v = state.viewer;
+  if (!v) return;
+  if (e.touches.length === 2) {
+    touchState.mode = 'pinch';
+    touchState.startDistance = twoFingerDistance(e.touches);
+    touchState.startScale = v.scale;
+  } else if (e.touches.length === 1) {
+    touchState.mode = v.scale > 1 ? 'pan' : 'drag';
+    touchState.startX = e.touches[0].clientX;
+    touchState.startY = e.touches[0].clientY;
+    touchState.dx = 0;
+    touchState.dy = 0;
+    touchState.panStartX = v.tx;
+    touchState.panStartY = v.ty;
+  }
+}, { passive: true });
+
+stage.addEventListener('touchmove', (e) => {
+  const v = state.viewer;
+  if (!v) return;
+  e.preventDefault();
+
+  if (touchState.mode === 'pinch' && e.touches.length === 2) {
+    const distance = twoFingerDistance(e.touches);
+    if (touchState.startDistance > 0) {
+      const mid = twoFingerMidpoint(e.touches);
+      zoomAround(touchState.startScale * (distance / touchState.startDistance), mid.x, mid.y);
+    }
+    return;
+  }
+
+  if (e.touches.length !== 1) return;
+  touchState.dx = e.touches[0].clientX - touchState.startX;
+  touchState.dy = e.touches[0].clientY - touchState.startY;
+
+  if (touchState.mode === 'pan') {
+    v.tx = touchState.panStartX + touchState.dx;
+    v.ty = touchState.panStartY + touchState.dy;
+    clampPan();
+    applyTransform();
+  } else if (touchState.mode === 'drag') {
+    /* Follow the finger a little so swiping feels connected. */
+    stagePhoto.style.transform =
+      'translate(' + (touchState.dx * 0.5) + 'px,' + (Math.max(0, touchState.dy) * 0.5) + 'px)';
+  }
+}, { passive: false });
+
+stage.addEventListener('touchend', (e) => {
+  const v = state.viewer;
+  if (!v) return;
+
+  const mode = touchState.mode;
+  const dx = touchState.dx;
+  const dy = touchState.dy;
+  const moved = Math.hypot(dx, dy);
+  touchState.mode = null;
+
+  if (mode === 'pinch') {
+    if (v.scale <= 1.02) resetZoom();
+    return;
+  }
+
+  /* A swipe only navigates or closes when the photo is at its normal size.
+     Once zoomed in, the same finger movement is panning instead. */
+  if (mode === 'drag') {
+    if (Math.abs(dy) > Math.abs(dx) && dy > 90) { closeViewer(); return; }
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) {
+      applyTransform();
+      stepViewer(dx < 0 ? 1 : -1);
+      return;
+    }
+    applyTransform();
+  }
+
+  if (mode !== 'drag' && mode !== 'pan') return;
+  if (moved >= 20) return;
+
+  /* Double tap: zoom in on that spot, or back out to the whole photo.
+     This has to work while zoomed in too, which is the whole point of it. */
+  const now = Date.now();
+  const touch = e.changedTouches[0];
+  if (!touch) return;
+  const near = Math.hypot(touch.clientX - touchState.lastTapX, touch.clientY - touchState.lastTapY) < 40;
+
+  if (now - touchState.lastTapTime < 320 && near) {
+    const rect = stage.getBoundingClientRect();
+    const fx = touch.clientX - rect.left - rect.width / 2;
+    const fy = touch.clientY - rect.top - rect.height / 2;
+    if (v.scale > 1) resetZoom(); else zoomAround(ZOOM_DOUBLE_TAP, fx, fy);
+    touchState.lastTapTime = 0;
+  } else {
+    touchState.lastTapTime = now;
+    touchState.lastTapX = touch.clientX;
+    touchState.lastTapY = touch.clientY;
+  }
+}, { passive: true });
+
+/* Stop Safari's own pinch-zoom of the whole page while the photo is open. */
+['gesturestart', 'gesturechange', 'gestureend'].forEach((type) => {
+  stage.addEventListener(type, (e) => e.preventDefault());
+});
+
+$('#prevBtn').addEventListener('click', () => stepViewer(-1));
+$('#nextBtn').addEventListener('click', () => stepViewer(1));
+$('#closeViewer').addEventListener('click', closeViewer);
+
+/* ---- the one primary action ---- */
+
+$('#doneBtn').addEventListener('click', async () => {
+  const v = state.viewer;
+  const task = currentViewerTask();
+  if (!task || !v) return;
+
+  const wasDone = !!task.done;
+  task.done = !wasDone;
+  await DB.putTask(task);
+  renderBoard();
+  renderViewer();
+
+  if (wasDone) return; // that tap was an undo, so stay put
+
+  /* Marked done: pause, then move on to the next thing left to do. */
+  await sleep(600);
+  if (!state.viewer || state.viewer !== v) return;
+
+  const remaining = v.order
+    .map((id, i) => ({ id: id, i: i }))
+    .filter((entry) => { const t = taskById(entry.id); return t && !t.done; });
+
+  if (remaining.length === 0) { closeViewer(); return; }
+
+  const ahead = remaining.find((entry) => entry.i > v.index);
+  const next = ahead || remaining[0];
+  goTo(next.i, 1);
+});
+
+/* ------------------------------------------------------------------ 8. PIN */
+
+/* Only a SHA-256 hash of the PIN is stored, never the PIN itself. */
+
+const pinGate = $('#pinGate');
+const pinPad = $('#pinPad');
+
+const pinRuntime = {
+  entered: '',
+  firstEntry: null,     // set while choosing a new PIN
+  mode: 'enter',        // 'enter' | 'create' | 'confirm'
+  wrongAttempts: 0,
+  lockedUntil: 0,
+  lockTimer: null,
+  onSuccess: null
+};
+
+function drawPinDots() {
+  $$('#pinDots i').forEach((dot, i) => {
+    dot.classList.toggle('filled', i < pinRuntime.entered.length);
+  });
+}
+
+function setPinScreen(title, message) {
+  $('#pinTitle').textContent = title;
+  $('#pinMsg').textContent = message || '';
+}
+
+function openPinGate(onSuccess) {
+  pinRuntime.entered = '';
+  pinRuntime.firstEntry = null;
+  pinRuntime.onSuccess = onSuccess;
+  pinRuntime.mode = state.meta.pinHash ? 'enter' : 'create';
+
+  if (pinRuntime.mode === 'create') {
+    setPinScreen('Choose a 4-digit PIN', 'This keeps the admin screen away from the cleaner. Write it down somewhere safe.');
+  } else {
+    setPinScreen('Enter admin PIN', '');
+  }
+  drawPinDots();
+  pinGate.hidden = false;
+  refreshPinLock();
+}
+
+function closePinGate() {
+  pinGate.hidden = true;
+  pinRuntime.entered = '';
+  pinRuntime.firstEntry = null;
+  drawPinDots();
+}
+
+function refreshPinLock() {
+  const remaining = Math.ceil((pinRuntime.lockedUntil - Date.now()) / 1000);
+  if (remaining > 0) {
+    pinPad.dataset.locked = '1';
+    setPinScreen('Enter admin PIN', 'Too many tries. Wait ' + remaining + ' seconds.');
+    clearTimeout(pinRuntime.lockTimer);
+    pinRuntime.lockTimer = setTimeout(refreshPinLock, 1000);
+  } else {
+    pinPad.dataset.locked = '0';
+    if (pinRuntime.mode === 'enter' && pinRuntime.wrongAttempts >= 5) {
+      pinRuntime.wrongAttempts = 0;
+      setPinScreen('Enter admin PIN', 'You can try again now.');
+    }
+  }
+}
+
+function shakePinDots() {
+  const dots = $('#pinDots');
+  dots.classList.remove('shake');
+  void dots.offsetWidth; // restart the animation
+  dots.classList.add('shake');
+}
+
+async function submitPin() {
+  const entered = pinRuntime.entered;
+
+  if (pinRuntime.mode === 'create') {
+    pinRuntime.firstEntry = entered;
+    pinRuntime.entered = '';
+    pinRuntime.mode = 'confirm';
+    setPinScreen('Enter the PIN again', 'Just to be sure.');
+    drawPinDots();
+    return;
+  }
+
+  if (pinRuntime.mode === 'confirm') {
+    if (entered !== pinRuntime.firstEntry) {
+      pinRuntime.entered = '';
+      pinRuntime.firstEntry = null;
+      pinRuntime.mode = 'create';
+      setPinScreen('Choose a 4-digit PIN', 'Those two did not match. Start again.');
+      shakePinDots();
+      drawPinDots();
+      return;
+    }
+    const hash = await sha256Hex(entered);
+    await DB.setMeta('pinHash', hash);
+    state.meta.pinHash = hash;
+    renderProgress(boardOrder());
+    const done = pinRuntime.onSuccess;
+    closePinGate();
+    if (done) done();
+    return;
+  }
+
+  /* mode === 'enter' */
+  const hash = await sha256Hex(entered);
+  if (hash === state.meta.pinHash) {
+    pinRuntime.wrongAttempts = 0;
+    const done = pinRuntime.onSuccess;
+    closePinGate();
+    if (done) done();
+    return;
+  }
+
+  pinRuntime.wrongAttempts += 1;
+  pinRuntime.entered = '';
+  drawPinDots();
+  shakePinDots();
+
+  if (pinRuntime.wrongAttempts >= 5) {
+    pinRuntime.lockedUntil = Date.now() + 60000;
+    refreshPinLock();
+  } else {
+    setPinScreen('Enter admin PIN', 'Wrong PIN. Try again.');
+  }
+}
+
+pinPad.addEventListener('click', (e) => {
+  const button = e.target.closest('button');
+  if (!button || button.classList.contains('blank')) return;
+  if (pinPad.dataset.locked === '1') return;
+
+  if (button.dataset.back) {
+    pinRuntime.entered = pinRuntime.entered.slice(0, -1);
+    drawPinDots();
+    return;
+  }
+  if (pinRuntime.entered.length >= 4) return;
+
+  pinRuntime.entered += button.textContent.trim();
+  drawPinDots();
+  if (pinRuntime.entered.length === 4) setTimeout(submitPin, 140);
+});
+
+$('#pinCancel').addEventListener('click', closePinGate);
+
+/* ---------------------------------------------------------------- 9. Admin */
+
+const adminScreen = $('#adminScreen');
+const adminScroll = $('#adminScroll');
+const ADMIN_IDLE_MS = 5 * 60 * 1000;
+let adminIdleTimer = null;
+
+function openAdmin() {
+  adminScreen.hidden = false;
+  renderAdmin();
+  resetTaskForm();
+  adminScroll.scrollTop = 0;
+  releaseWakeLock();
+  bumpAdminIdleTimer();
+}
+
+function closeAdmin() {
+  adminScreen.hidden = true;
+  clearTimeout(adminIdleTimer);
+  requestWakeLock();
+  renderBoard();
+}
+
+/* If she walks away mid-edit, go back to the board so the cleaner never
+   finds the admin screen open. */
+function bumpAdminIdleTimer() {
+  clearTimeout(adminIdleTimer);
+  adminIdleTimer = setTimeout(() => {
+    if (!adminScreen.hidden) closeAdmin();
+  }, ADMIN_IDLE_MS);
+}
+['pointerdown', 'keydown', 'input', 'scroll'].forEach((type) => {
+  adminScreen.addEventListener(type, () => {
+    if (!adminScreen.hidden) bumpAdminIdleTimer();
+  }, true);
+});
+
+$('#gearBtn').addEventListener('click', () => openPinGate(openAdmin));
+$('#leaveAdmin').addEventListener('click', closeAdmin);
+$('#jumpBackup').addEventListener('click', () => {
+  $('#backupSection').scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
+});
+
+const EDIT_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4l10-10a2.5 2.5 0 0 0-3.5-3.5L4.5 16.5z"/></svg>';
+const TRASH_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 7h14M9 7V5h6v2m-8 0l1 12h8l1-12"/></svg>';
+const GRIP_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5 9h14M5 15h14"/></svg>';
+
+function renderAdmin() {
+  renderTaskList($('#listRecurring'), tasksOfType('recurring'), 'Nothing repeating yet.');
+  renderTaskList($('#listOneoff'), tasksOfType('oneoff'), 'Nothing extra for this visit.');
+  renderVisitAge();
+}
+
+function renderTaskList(container, tasks, emptyText) {
+  container.innerHTML = '';
+  if (tasks.length === 0) {
+    container.innerHTML = '<div class="emptyGroup">' + esc(emptyText) + '</div>';
+    return;
+  }
+  tasks.forEach((task) => {
+    const row = document.createElement('div');
+    row.className = 'arow';
+    row.dataset.id = task.id;
+    row.innerHTML =
+      '<img class="thumb" alt="" src="' + esc(photoUrl(task, 'thumb')) + '">' +
+      '<div class="rowCap">' + esc(task.caption || '(no caption)') +
+        (task.notes ? '<span class="rowNote">' + esc(task.notes) + '</span>' : '') +
+      '</div>' +
+      '<button class="iconBtn" data-act="edit" aria-label="Edit">' + EDIT_SVG + '</button>' +
+      '<button class="iconBtn" data-act="delete" aria-label="Delete">' + TRASH_SVG + '</button>' +
+      '<button class="iconBtn handle" data-act="drag" aria-label="Drag to reorder">' + GRIP_SVG + '</button>';
+    container.appendChild(row);
+  });
+}
+
+/* Edit and delete */
+adminScroll.addEventListener('click', async (e) => {
+  const button = e.target.closest('.iconBtn');
+  if (!button || button.dataset.act === 'drag') return;
+  const row = button.closest('.arow');
+  if (!row) return;
+  const task = taskById(row.dataset.id);
+  if (!task) return;
+
+  if (button.dataset.act === 'edit') {
+    startEditingTask(task);
+    return;
+  }
+  if (button.dataset.act === 'delete') {
+    const ok = await confirmDialog({
+      title: 'Delete this task?',
+      body: '"' + (task.caption || 'this task') + '" will be removed from the board. This cannot be undone.',
+      okLabel: 'Delete',
+      cancelLabel: 'Keep it'
+    });
+    if (!ok) return;
+    await DB.deleteTask(task.id);
+    releasePhotoUrls(task.id);
+    if (formRuntime.editingId === task.id) resetTaskForm();
+    await loadState();
+    renderAdmin();
+    renderBoard();
+    toast('Task deleted');
+  }
+});
+
+/* ---- drag to reorder, with touch ----
+   Rows are a fixed 92px tall, which keeps this simple: the slot a row has
+   been dragged into is just its start position plus the distance moved,
+   rounded to whole rows. */
+const ROW_HEIGHT = 92;
+
+function enableDragReorder(container) {
+  let drag = null;
+  let autoScrollFrame = null;
+
+  function stopAutoScroll() {
+    if (autoScrollFrame) { cancelAnimationFrame(autoScrollFrame); autoScrollFrame = null; }
+  }
+
+  function layout() {
+    /* Shift the other rows to make room for the dragged one. */
+    drag.rows.forEach((row, i) => {
+      if (i === drag.fromIndex) return;
+      let shift = 0;
+      if (drag.fromIndex < drag.toIndex && i > drag.fromIndex && i <= drag.toIndex) shift = -ROW_HEIGHT;
+      if (drag.fromIndex > drag.toIndex && i >= drag.toIndex && i < drag.fromIndex) shift = ROW_HEIGHT;
+      row.style.transform = shift ? 'translateY(' + shift + 'px)' : '';
+      row.style.transition = reduceMotion() ? '' : 'transform .18s ease';
+    });
+  }
+
+  container.addEventListener('pointerdown', (e) => {
+    const handle = e.target.closest('.handle');
+    if (!handle || drag) return;
+    const row = handle.closest('.arow');
+    if (!row) return;
+
+    e.preventDefault();
+    /* Capture keeps the events coming if her finger slides off the grip.
+       If the browser refuses, the drag still works, so never let it throw. */
+    try { handle.setPointerCapture(e.pointerId); } catch (err) { /* carry on */ }
+
+    const rows = $$('.arow', container);
+    drag = {
+      pointerId: e.pointerId,
+      handle: handle,
+      row: row,
+      rows: rows,
+      fromIndex: rows.indexOf(row),
+      toIndex: rows.indexOf(row),
+      startY: e.clientY,
+      offset: 0
+    };
+    row.classList.add('dragging');
+    row.style.transition = '';
+  });
+
+  container.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    drag.offset = e.clientY - drag.startY;
+    drag.row.style.transform = 'translateY(' + drag.offset + 'px)';
+
+    const target = Math.min(
+      drag.rows.length - 1,
+      Math.max(0, drag.fromIndex + Math.round(drag.offset / ROW_HEIGHT))
+    );
+    if (target !== drag.toIndex) { drag.toIndex = target; layout(); }
+
+    /* Scroll the page when dragging near the top or bottom edge. */
+    const nearTop = e.clientY < 130;
+    const nearBottom = e.clientY > window.innerHeight - 130;
+    if (nearTop || nearBottom) {
+      if (!autoScrollFrame) {
+        const step = () => {
+          if (!drag) { stopAutoScroll(); return; }
+          adminScroll.scrollTop += nearBottom ? 12 : -12;
+          drag.startY += nearBottom ? -12 : 12;
+          autoScrollFrame = requestAnimationFrame(step);
+        };
+        autoScrollFrame = requestAnimationFrame(step);
+      }
+    } else {
+      stopAutoScroll();
+    }
+  });
+
+  async function endDrag(e) {
+    if (!drag || (e && e.pointerId !== drag.pointerId)) return;
+    stopAutoScroll();
+    const finished = drag;
+    drag = null;
+
+    finished.row.classList.remove('dragging');
+    finished.rows.forEach((row) => { row.style.transform = ''; row.style.transition = ''; });
+
+    if (finished.toIndex !== finished.fromIndex) {
+      const ids = finished.rows.map((row) => row.dataset.id);
+      const [moved] = ids.splice(finished.fromIndex, 1);
+      ids.splice(finished.toIndex, 0, moved);
+      await commitGroupOrder(ids);
+    }
+    renderAdmin();
+    renderBoard();
+  }
+
+  container.addEventListener('pointerup', endDrag);
+  container.addEventListener('pointercancel', endDrag);
+  /* Safety net: if the finger lifts somewhere else entirely, still finish the
+     drag rather than leaving a row stuck to the screen. */
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+}
+
+/* Reordering happens inside one group, but sortIndex is global. Keep the
+   group's existing sortIndex slots and hand them out in the new order, so the
+   other group's positions are left alone. */
+async function commitGroupOrder(orderedIds) {
+  const tasks = orderedIds.map(taskById).filter(Boolean);
+  const slots = tasks.map((t) => t.sortIndex).sort((a, b) => a - b);
+  tasks.forEach((task, i) => { task.sortIndex = slots[i]; });
+  await DB.putTasks(tasks);
+  await loadState();
+}
+
+enableDragReorder($('#listRecurring'));
+enableDragReorder($('#listOneoff'));
+
+/* ---- add / edit a task ---- */
+
+const CAPTION_LIMIT = 60;
+
+const formRuntime = {
+  editingId: null,
+  type: 'recurring',
+  photoBlob: null,
+  thumbBlob: null,
+  previewUrl: null,
+  busy: false
+};
+
+function setPreviewPhoto(blob) {
+  if (formRuntime.previewUrl) {
+    URL.revokeObjectURL(formRuntime.previewUrl);
+    formRuntime.previewUrl = null;
+  }
+  const img = $('#previewPhoto');
+  if (blob) {
+    formRuntime.previewUrl = URL.createObjectURL(blob);
+    img.src = formRuntime.previewUrl;
+    img.hidden = false;
+    $('#previewPlaceholder').hidden = true;
+  } else {
+    img.removeAttribute('src');
+    img.hidden = true;
+    $('#previewPlaceholder').hidden = false;
+  }
+}
+
+function renderCaptionCounter() {
+  const length = $('#capInput').value.length;
+  const counter = $('#capCounter');
+  if (length > CAPTION_LIMIT) {
+    counter.textContent = length + ' characters. Long captions may be cut off on the card.';
+    counter.classList.add('warn');
+  } else {
+    counter.textContent = length + ' of ' + CAPTION_LIMIT + ' characters';
+    counter.classList.remove('warn');
+  }
+}
+
+function renderPreviewCaption() {
+  $('#previewCaption').textContent = $('#capInput').value;
+}
+
+function setFormType(type) {
+  formRuntime.type = type;
+  $$('#typeToggle button').forEach((button) => {
+    button.classList.toggle('on', button.dataset.type === type);
+  });
+}
+
+function showFormError(message) {
+  const box = $('#formError');
+  box.textContent = message || '';
+  box.hidden = !message;
+}
+
+function resetTaskForm() {
+  formRuntime.editingId = null;
+  formRuntime.photoBlob = null;
+  formRuntime.thumbBlob = null;
+  setPreviewPhoto(null);
+  $('#capInput').value = '';
+  $('#notesInput').value = '';
+  setFormType('recurring');
+  $('#formTitle').textContent = 'Add task';
+  $('#formHint').textContent = 'Pick a photo, then write a short caption.';
+  $('#photoStatus').textContent = 'No photo chosen yet.';
+  $('#saveTaskBtn').textContent = 'Save task';
+  $('#cancelEditBtn').hidden = true;
+  showFormError('');
+  renderCaptionCounter();
+  renderPreviewCaption();
+  $('#fileCamera').value = '';
+  $('#fileLibrary').value = '';
+}
+
+function startEditingTask(task) {
+  resetTaskForm();
+  formRuntime.editingId = task.id;
+  $('#capInput').value = task.caption || '';
+  $('#notesInput').value = task.notes || '';
+  setFormType(task.type);
+  setPreviewPhoto(task.thumbBlob || task.photoBlob);
+  $('#formTitle').textContent = 'Edit task';
+  $('#formHint').textContent = 'Change what you need. The photo stays unless you pick a new one.';
+  $('#photoStatus').textContent = 'Using the current photo.';
+  $('#saveTaskBtn').textContent = 'Save changes';
+  $('#cancelEditBtn').hidden = false;
+  renderCaptionCounter();
+  renderPreviewCaption();
+  $('#formTitle').scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' });
+}
+
+$('#capInput').addEventListener('input', () => { renderCaptionCounter(); renderPreviewCaption(); });
+$('#typeToggle').addEventListener('click', (e) => {
+  const button = e.target.closest('button');
+  if (button) setFormType(button.dataset.type);
+});
+$('#cancelEditBtn').addEventListener('click', resetTaskForm);
+
+$('#pickCamera').addEventListener('click', () => $('#fileCamera').click());
+$('#pickLibrary').addEventListener('click', () => $('#fileLibrary').click());
+
+async function handlePickedFile(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  $('#photoStatus').textContent = 'Preparing photo…';
+  showFormError('');
+  try {
+    const photos = await processPhoto(file);
+    formRuntime.photoBlob = photos.photoBlob;
+    formRuntime.thumbBlob = photos.thumbBlob;
+    setPreviewPhoto(photos.thumbBlob);
+    $('#photoStatus').textContent = 'Photo ready (' + Math.round(photos.photoBlob.size / 1024) + ' KB).';
+  } catch (err) {
+    formRuntime.photoBlob = null;
+    formRuntime.thumbBlob = null;
+    $('#photoStatus').textContent = 'No photo chosen yet.';
+    showFormError(PHOTO_ERROR_TEXT);
+  } finally {
+    input.value = ''; // so picking the same file again still fires a change
+  }
+}
+
+$('#fileCamera').addEventListener('change', (e) => handlePickedFile(e.target));
+$('#fileLibrary').addEventListener('change', (e) => handlePickedFile(e.target));
+
+$('#saveTaskBtn').addEventListener('click', async () => {
+  if (formRuntime.busy) return;
+
+  const caption = $('#capInput').value.trim();
+  const notes = $('#notesInput').value.trim();
+  const editing = formRuntime.editingId ? taskById(formRuntime.editingId) : null;
+
+  if (!caption) { showFormError('Please write a short caption so the cleaner knows what to do.'); return; }
+  if (!editing && !formRuntime.photoBlob) { showFormError('Please choose a photo first.'); return; }
+
+  formRuntime.busy = true;
+  $('#saveTaskBtn').disabled = true;
+  try {
+    if (editing) {
+      editing.caption = caption;
+      editing.notes = notes;
+      editing.type = formRuntime.type;
+      if (formRuntime.photoBlob) {
+        editing.photoBlob = formRuntime.photoBlob;
+        editing.thumbBlob = formRuntime.thumbBlob;
+        releasePhotoUrls(editing.id); // the old blob URLs point at the old photo
+      }
+      await DB.putTask(editing);
+      toast('Changes saved');
+    } else {
+      const highest = state.tasks.reduce((max, t) => Math.max(max, t.sortIndex), -1);
+      await DB.putTask({
+        id: newId(),
+        caption: caption,
+        notes: notes,
+        photoBlob: formRuntime.photoBlob,
+        thumbBlob: formRuntime.thumbBlob,
+        type: formRuntime.type,
+        done: false,
+        carriedOver: false,
+        sortIndex: highest + 1,
+        createdAt: Date.now()
+      });
+      toast('Task added');
+    }
+    await loadState();
+    resetTaskForm();
+    renderAdmin();
+    renderBoard();
+  } catch (err) {
+    showFormError('That could not be saved. There may be no space left on the iPad.');
+  } finally {
+    formRuntime.busy = false;
+    $('#saveTaskBtn').disabled = false;
+  }
+});
+
+/* -------------------------------------------------------- 10. Visit reset */
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function visitAgeDays() {
+  const started = state.meta.visitStartedAt;
+  if (!started) return 0;
+  return Math.floor((Date.now() - started) / DAY_MS);
+}
+
+function renderVisitAge() {
+  const days = visitAgeDays();
+  const el = $('#visitAge');
+  el.textContent = 'Current visit started ' +
+    (days === 0 ? 'today' : days === 1 ? '1 day ago' : days + ' days ago');
+  /* A gentle nudge only. Nothing ever resets on its own: visits are irregular
+     and a wrong automatic reset would wipe the board mid-clean. */
+  el.classList.toggle('stale', days > 3);
+}
+
+const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+
+$('#startVisitBtn').addEventListener('click', async () => {
+  const recurring = state.tasks.filter((t) => t.type === 'recurring');
+  const carryOver = state.tasks.filter((t) => t.type === 'oneoff' && !t.done);
+  const toDelete = state.tasks.filter((t) => t.type === 'oneoff' && t.done);
+
+  const parts = ['This will reset ' + plural(recurring.length, 'repeating task', 'repeating tasks') +
+    ' and carry over ' + plural(carryOver.length, 'unfinished one', 'unfinished ones') + '.'];
+  if (toDelete.length) {
+    parts.push(plural(toDelete.length, 'finished one-off task', 'finished one-off tasks') + ' will be removed.');
+  }
+
+  const ok = await confirmDialog({
+    title: 'Start a new visit?',
+    body: parts.join(' '),
+    okLabel: 'Start new visit',
+    cancelLabel: 'Not yet'
+  });
+  if (!ok) return;
+
+  for (const task of toDelete) {
+    await DB.deleteTask(task.id);
+    releasePhotoUrls(task.id);
+  }
+
+  const updates = [];
+  for (const task of recurring) {
+    if (task.done) { task.done = false; updates.push(task); }
+  }
+  for (const task of carryOver) {
+    if (!task.carriedOver) { task.carriedOver = true; updates.push(task); }
+  }
+  if (updates.length) await DB.putTasks(updates);
+  await DB.setMeta('visitStartedAt', Date.now());
+
+  await loadState();
+  renderAdmin();
+  renderBoard();
+  toast('New visit started');
+});
+
+/* ------------------------------------------------------------- 11. Backup */
+
+/* The only protection against a lost or wiped iPad. Photos travel as base64
+   inside one JSON file, so a backup is a single thing to keep safe. */
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result);
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+function base64ToBlob(base64, type) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: type || 'image/jpeg' });
+}
+
+async function buildBackup() {
+  const tasks = [];
+  for (const task of state.tasks.slice().sort((a, b) => a.sortIndex - b.sortIndex)) {
+    tasks.push({
+      id: task.id,
+      caption: task.caption,
+      notes: task.notes || '',
+      type: task.type,
+      done: !!task.done,
+      carriedOver: !!task.carriedOver,
+      sortIndex: task.sortIndex,
+      createdAt: task.createdAt,
+      photo: task.photoBlob ? await blobToBase64(task.photoBlob) : null,
+      photoType: task.photoBlob ? task.photoBlob.type : null,
+      thumb: task.thumbBlob ? await blobToBase64(task.thumbBlob) : null,
+      thumbType: task.thumbBlob ? task.thumbBlob.type : null
+    });
+  }
+  return {
+    format: 'cleaningBoard',
+    version: 1,
+    exportedAt: Date.now(),
+    meta: {
+      visitStartedAt: state.meta.visitStartedAt || Date.now(),
+      pinHash: state.meta.pinHash || '',
+      seeded: true
+    },
+    tasks: tasks
+  };
+}
+
+function backupFileName() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return 'cleaning-board-backup-' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + '.json';
+}
+
+$('#exportBtn').addEventListener('click', async () => {
+  const button = $('#exportBtn');
+  button.disabled = true;
+  button.textContent = 'Preparing…';
+  try {
+    const backup = await buildBackup();
+    const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = backupFileName();
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast('Backup saved to Files');
+  } catch (err) {
+    toast('The backup could not be made');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Export backup';
+  }
+});
+
+/* On an iPad the share sheet is often the easier route: it can send the file
+   straight to another device or to iCloud Drive. */
+$('#shareBtn').addEventListener('click', async () => {
+  const button = $('#shareBtn');
+  button.disabled = true;
+  try {
+    const backup = await buildBackup();
+    const file = new File([JSON.stringify(backup)], backupFileName(), { type: 'application/json' });
+    await navigator.share({ files: [file], title: 'Cleaning board backup' });
+  } catch (err) {
+    /* Cancelling the share sheet lands here too, so stay quiet about it. */
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('#restoreBtn').addEventListener('click', () => $('#restoreFile').click());
+
+$('#restoreFile').addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+
+  let backup;
+  try {
+    backup = JSON.parse(await file.text());
+    if (backup.format !== 'cleaningBoard' || !Array.isArray(backup.tasks)) throw new Error('wrong file');
+  } catch (err) {
+    await confirmDialog({
+      title: 'That file could not be read',
+      body: 'Choose a backup file that this app exported. It ends in .json.',
+      okLabel: 'OK',
+      cancelLabel: 'Close'
+    });
+    return;
+  }
+
+  const ok = await confirmDialog({
+    title: 'Restore this backup?',
+    body: 'Everything on the board now will be replaced by ' +
+      plural(backup.tasks.length, 'task', 'tasks') + ' from the backup file. This cannot be undone.',
+    okLabel: 'Replace everything',
+    cancelLabel: 'Cancel'
+  });
+  if (!ok) return;
+
+  try {
+    const tasks = backup.tasks.map((raw, i) => ({
+      id: raw.id || newId(),
+      caption: raw.caption || '',
+      notes: raw.notes || '',
+      photoBlob: raw.photo ? base64ToBlob(raw.photo, raw.photoType) : null,
+      thumbBlob: raw.thumb ? base64ToBlob(raw.thumb, raw.thumbType) : null,
+      type: raw.type === 'oneoff' ? 'oneoff' : 'recurring',
+      done: !!raw.done,
+      carriedOver: !!raw.carriedOver,
+      sortIndex: typeof raw.sortIndex === 'number' ? raw.sortIndex : i,
+      createdAt: raw.createdAt || Date.now()
+    }));
+
+    const meta = Object.assign({ seeded: true }, backup.meta || {});
+    if (!meta.visitStartedAt) meta.visitStartedAt = Date.now();
+    /* Keep the PIN already on this iPad if the backup has none. */
+    if (!meta.pinHash) meta.pinHash = state.meta.pinHash || '';
+    if (!meta.pinHash) delete meta.pinHash;
+
+    /* Every task is replaced, so every cached photo URL is stale. */
+    for (const id of Array.from(objectUrls.keys())) URL.revokeObjectURL(objectUrls.get(id));
+    objectUrls.clear();
+    cardElements.forEach((el) => el.remove());
+    cardElements.clear();
+
+    await DB.replaceAll(tasks, meta);
+    await loadState();
+    resetTaskForm();
+    renderAdmin();
+    renderBoard();
+    toast('Backup restored');
+  } catch (err) {
+    toast('The backup could not be restored');
+  }
+});
+
+/* ------------------------------------------------------------ 12. Start-up */
+
+/* Keep the iPad awake while the board is open, so she is not tapping a dark
+   screen with wet hands. Silently does nothing where unsupported. */
+let wakeLock = null;
+
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator) || wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch (err) {
+    wakeLock = null;
+  }
+}
+
+function releaseWakeLock() {
+  if (wakeLock) {
+    try { wakeLock.release(); } catch (err) { /* ignore */ }
+    wakeLock = null;
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && adminScreen.hidden) requestWakeLock();
+});
+
+/* Ask Safari not to evict the photos when storage gets tight. */
+async function askForPersistentStorage() {
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      const already = navigator.storage.persisted ? await navigator.storage.persisted() : false;
+      if (!already) await navigator.storage.persist();
+    }
+  } catch (err) { /* nothing we can do about it */ }
+}
+
+async function start() {
+  try {
+    await seedIfEmpty();
+  } catch (err) { /* a failed seed is not worth blocking start-up for */ }
+
+  await loadState();
+
+  if (!state.meta.visitStartedAt) {
+    await DB.setMeta('visitStartedAt', Date.now());
+    state.meta.visitStartedAt = Date.now();
+  }
+
+  renderBoard();
+
+  /* Sharing a file is only offered where it actually works. */
+  try {
+    const probe = new File(['{}'], 'probe.json', { type: 'application/json' });
+    if (navigator.canShare && navigator.canShare({ files: [probe] })) $('#shareBtn').hidden = false;
+  } catch (err) { /* leave the button hidden */ }
+
+  askForPersistentStorage();
+  requestWakeLock();
+}
+
+/* Keep the layout right when the iPad is turned, and re-check the visit age
+   if the app has been left open overnight. */
+window.addEventListener('orientationchange', () => setTimeout(() => renderBoard(), 250));
+window.addEventListener('resize', () => { if (state.viewer) applyTransform(); });
+setInterval(() => { if (!adminScreen.hidden) renderVisitAge(); }, 60000);
+
+start();
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* offline support is a bonus, not a requirement */ });
+  });
+}
+</script>
+</body>
+</html>
