@@ -529,6 +529,8 @@ img{display:block;}
       <input type="file" id="restoreFile" accept="application/json,.json" hidden>
     </section>
 
+    <p class="hint" id="versionLine" style="text-align:center;margin:0 0 8px"></p>
+
   </div>
 </div>
 
@@ -581,6 +583,11 @@ img{display:block;}
     12. Start-up
    ========================================================================== */
 'use strict';
+
+/* Shown at the bottom of the admin screen. Bumped with every published change,
+   so it is possible to tell at a glance which version an iPad is actually
+   running rather than guessing. Keep it in step with CACHE_VERSION in sw.js. */
+const APP_VERSION = 4;
 
 /* ---------------------------------------------------------------- 1. Helpers */
 
@@ -2454,6 +2461,7 @@ async function start() {
     state.meta.visitStartedAt = Date.now();
   }
 
+  $('#versionLine').textContent = 'Cleaning board \u2014 version ' + APP_VERSION;
   buildRoomChips();
   setFormRoom(OTHER_ROOM);
   renderBoard();

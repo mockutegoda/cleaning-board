@@ -7,7 +7,7 @@
    When you change index.html, bump CACHE_VERSION below. That is what tells
    every iPad to pick up the new version. */
 
-const CACHE_VERSION = 'cleaning-board-v3';
+const CACHE_VERSION = 'cleaning-board-v4';
 
 const APP_SHELL = [
   './',
@@ -39,10 +39,24 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   if (request.method !== 'GET') return;
 
-  /* Opening the app: serve the cached page, fall back to the network. */
-  if (request.mode === 'navigate') {
+  /* Opening the app: try the network first, and only fall back to the stored
+     copy when there is no network.
+
+     This must not be cache-first. The page is small, the data lives in
+     IndexedDB rather than in here, and an iPad that never re-checks for a new
+     version is an iPad stuck on an old one forever. Offline still works: the
+     fetch fails and the stored copy is served instead. */
+  if (request.mode === 'navigate' || request.destination === 'document') {
     event.respondWith(
-      caches.match('./index.html').then((cached) => cached || fetch(request))
+      fetch(request)
+        .then((response) => {
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_VERSION).then((cache) => cache.put('./index.html', copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match('./index.html'))
     );
     return;
   }
