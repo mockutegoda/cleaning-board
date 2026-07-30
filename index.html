@@ -122,6 +122,7 @@ img{display:block;}
   background:linear-gradient(to top,rgba(0,0,0,.88),rgba(0,0,0,.55) 42%,rgba(0,0,0,0));
 }
 .card .caption{font-size:26px;font-weight:600;line-height:1.2;}
+.card .cardRoom{font-size:17px;font-weight:500;color:rgba(245,243,239,.72);margin-bottom:2px;}
 .card.isDone{opacity:.45;}
 
 .stateBtn{
@@ -490,6 +491,16 @@ img{display:block;}
               <button data-type="oneoff">This visit only</button>
             </div>
           </div>
+
+          <div class="field">
+            <label>How important</label>
+            <div class="toggle" id="priorityToggle">
+              <button data-iftime="no" class="on">Normal</button>
+              <button data-iftime="yes">If there’s time left</button>
+            </div>
+            <div class="counter">Optional jobs sit in their own section at the
+              bottom of the board and are left out of the count at the top.</div>
+          </div>
         </div>
 
         <div class="previewWrap">
@@ -597,7 +608,7 @@ img{display:block;}
 /* Shown at the bottom of the admin screen. Bumped with every published change,
    so it is possible to tell at a glance which version an iPad is actually
    running rather than guessing. Keep it in step with CACHE_VERSION in sw.js. */
-const APP_VERSION = 5;
+const APP_VERSION = 6;
 
 /* ---------------------------------------------------------------- 1. Helpers */
 
@@ -872,9 +883,18 @@ const PHOTO_ERROR_TEXT = 'That photo could not be read. Try taking a screenshot 
 const ROOMS = ['Bathroom', 'Toilet', 'Kitchen', 'Bedroom', 'Living area', 'Guest room', 'Work desk'];
 
 const OTHER_ROOM = 'Other';
-const ROOM_ORDER = ROOMS.concat([OTHER_ROOM]);
+
+/* Not a room: a task flagged this way keeps its room, but drops to a section
+   of its own at the very bottom, so it is plainly the last thing to worry
+   about. Nothing here counts towards the progress line at the top. */
+const TIME_LEFT = 'If there\u2019s time left';
+
+const ROOM_ORDER = ROOMS.concat([OTHER_ROOM, TIME_LEFT]);
 
 const roomOf = (task) => (task.room && ROOMS.indexOf(task.room) >= 0) ? task.room : OTHER_ROOM;
+
+/* Which section of the board a task belongs in. */
+const groupOf = (task) => (task.ifTime ? TIME_LEFT : roomOf(task));
 
 /* ------------------------------------------------------------ 4. Seed data */
 
@@ -916,7 +936,7 @@ const SEED = [
   { caption: 'Clean the sink and taps', notes: '', type: 'recurring', room: 'Bathroom', label: 'Bathroom', from: '#5B6E64', to: '#33413B' },
   { caption: 'Change the bed linen', notes: 'Clean sheets are in the hallway cupboard.', type: 'recurring', room: 'Bedroom', label: 'Bedroom', from: '#6B6070', to: '#3E3745' },
   { caption: 'Wipe the marks off this cupboard door', notes: 'Warm water only, no spray.', type: 'oneoff', room: 'Kitchen', label: 'Cupboard', from: '#75695A', to: '#443D34' },
-  { caption: 'Dust the top of the bookshelf', notes: '', type: 'recurring', room: 'Living area', label: 'Living room', from: '#4E6A6E', to: '#2E4144' }
+  { caption: 'Dust the top of the bookshelf', notes: '', type: 'recurring', room: 'Living area', ifTime: true, label: 'Living room', from: '#4E6A6E', to: '#2E4144' }
 ];
 
 async function seedIfEmpty() {
@@ -937,6 +957,7 @@ async function seedIfEmpty() {
       thumbBlob: photos.thumbBlob,
       type: s.type,
       room: s.room,
+      ifTime: !!s.ifTime,
       done: false,
       carriedOver: false,
       parked: false,
@@ -1022,7 +1043,7 @@ function boardSequence() {
   const ordered = boardOrder();
   const out = [];
   ROOM_ORDER.forEach((room) => {
-    ordered.forEach((task) => { if (roomOf(task) === room) out.push(task); });
+    ordered.forEach((task) => { if (groupOf(task) === room) out.push(task); });
   });
   return out;
 }
@@ -1048,7 +1069,7 @@ function buildCard(task) {
   card.dataset.id = task.id;
   card.innerHTML =
     '<img class="photo" alt="">' +
-    '<div class="scrim"><div class="caption"></div></div>' +
+    '<div class="scrim"><div class="cardRoom" hidden></div><div class="caption"></div></div>' +
     '<span class="carriedBadge" hidden>From last time</span>' +
     '<button class="stateBtn" type="button"><span class="ring">' + TICK_SVG + '</span></button>' +
     '<button class="tapArea" type="button" aria-label="Open"></button>';
@@ -1062,7 +1083,7 @@ function buildCard(task) {
   return card;
 }
 
-function updateCard(card, task) {
+function updateCard(card, task, showRoom) {
   const img = $('.photo', card);
   const url = photoUrl(task, 'thumb');
   if (img.getAttribute('src') !== url) img.src = url;
@@ -1070,6 +1091,10 @@ function updateCard(card, task) {
 
   const caption = $('.caption', card);
   if (caption.textContent !== (task.caption || '')) caption.textContent = task.caption || '';
+
+  const roomLine = $('.cardRoom', card);
+  roomLine.hidden = !showRoom;
+  if (showRoom) roomLine.textContent = roomOf(task);
 
   card.classList.toggle('isDone', !!task.done);
   $('.carriedBadge', card).hidden = !(task.type === 'oneoff' && task.carriedOver);
@@ -1109,7 +1134,7 @@ function renderBoard() {
   /* Group into rooms, keeping the finished-last order inside each one. */
   const groups = new Map();
   sequence.forEach((task) => {
-    const room = roomOf(task);
+    const room = groupOf(task);
     if (!groups.has(room)) groups.set(room, []);
     groups.get(room).push(task);
   });
@@ -1133,11 +1158,13 @@ function renderBoard() {
     section.head.hidden = !showHeadings;
     section.el.classList.toggle('allDone', done === tasks.length);
 
-    /* Re-use existing card elements and move them into the new order. */
+    /* Re-use existing card elements and move them into the new order. In the
+       optional section the room is written on the card, because there it is
+       the only thing saying where the job is. */
     tasks.forEach((task) => {
       let card = cardElements.get(task.id);
       if (!card) { card = buildCard(task); cardElements.set(task.id, card); }
-      updateCard(card, task);
+      updateCard(card, task, room === TIME_LEFT);
       section.grid.appendChild(card);
     });
 
@@ -1163,14 +1190,17 @@ function renderBoard() {
   renderProgress(sequence);
 }
 
-function renderProgress(ordered) {
-  const total = ordered.length;
-  const done = ordered.filter((t) => t.done).length;
+function renderProgress(sequence) {
+  /* Optional jobs are deliberately left out of the count. They are extras, and
+     a progress bar that never fills would read as falling behind. */
+  const required = sequence.filter((t) => !t.ifTime);
+  const total = required.length;
+  const done = required.filter((t) => t.done).length;
 
   $('#progressText').textContent = done + ' of ' + total + ' done';
   $('#progressFill').style.width = total ? (done / total * 100) + '%' : '0%';
 
-  $('#emptyState').hidden = total > 0;
+  $('#emptyState').hidden = sequence.length > 0;
   $('#allDonePanel').hidden = !(total > 0 && done === total);
   $('#setupHint').hidden = !!state.meta.pinHash;
 }
@@ -1801,7 +1831,8 @@ function renderTaskList(container, tasks, emptyText, isParked) {
     row.className = 'arow';
     row.dataset.id = task.id;
     const room = roomOf(task);
-    const rowMeta = [room === OTHER_ROOM ? '' : room, task.notes].filter(Boolean).join(' · ');
+    const rowMeta = [room === OTHER_ROOM ? '' : room, task.ifTime ? TIME_LEFT : '', task.notes]
+      .filter(Boolean).join(' · ');
     /* Off the board there is no order to speak of, so those rows get a
        "put it back" button where the grip would be. */
     const lastButton = isParked
@@ -2028,6 +2059,7 @@ const formRuntime = {
   editingId: null,
   type: 'recurring',
   room: OTHER_ROOM,
+  ifTime: false,
   photoBlob: null,
   thumbBlob: null,
   previewUrl: null,
@@ -2087,6 +2119,13 @@ function setFormRoom(room) {
   });
 }
 
+function setFormPriority(ifTime) {
+  formRuntime.ifTime = !!ifTime;
+  $$('#priorityToggle button').forEach((button) => {
+    button.classList.toggle('on', (button.dataset.iftime === 'yes') === formRuntime.ifTime);
+  });
+}
+
 function setFormType(type) {
   formRuntime.type = type;
   $$('#typeToggle button').forEach((button) => {
@@ -2109,6 +2148,7 @@ function resetTaskForm() {
   $('#notesInput').value = '';
   setFormType('recurring');
   setFormRoom(OTHER_ROOM);
+  setFormPriority(false);
   $('#formTitle').textContent = 'Add task';
   $('#formHint').textContent = 'Pick a photo, then write a short caption.';
   $('#photoStatus').textContent = 'No photo chosen yet.';
@@ -2128,6 +2168,7 @@ function startEditingTask(task) {
   $('#notesInput').value = task.notes || '';
   setFormType(task.type);
   setFormRoom(roomOf(task));
+  setFormPriority(!!task.ifTime);
   setPreviewPhoto(task.thumbBlob || task.photoBlob);
   $('#formTitle').textContent = 'Edit task';
   $('#formHint').textContent = 'Change what you need. The photo stays unless you pick a new one.';
@@ -2143,6 +2184,10 @@ $('#capInput').addEventListener('input', () => { renderCaptionCounter(); renderP
 $('#typeToggle').addEventListener('click', (e) => {
   const button = e.target.closest('button');
   if (button) setFormType(button.dataset.type);
+});
+$('#priorityToggle').addEventListener('click', (e) => {
+  const button = e.target.closest('button');
+  if (button) setFormPriority(button.dataset.iftime === 'yes');
 });
 $('#cancelEditBtn').addEventListener('click', resetTaskForm);
 
@@ -2191,6 +2236,7 @@ $('#saveTaskBtn').addEventListener('click', async () => {
       editing.notes = notes;
       editing.type = formRuntime.type;
       editing.room = formRuntime.room === OTHER_ROOM ? '' : formRuntime.room;
+      editing.ifTime = formRuntime.ifTime;
       if (formRuntime.photoBlob) {
         editing.photoBlob = formRuntime.photoBlob;
         editing.thumbBlob = formRuntime.thumbBlob;
@@ -2208,6 +2254,7 @@ $('#saveTaskBtn').addEventListener('click', async () => {
         thumbBlob: formRuntime.thumbBlob,
         type: formRuntime.type,
         room: formRuntime.room === OTHER_ROOM ? '' : formRuntime.room,
+        ifTime: formRuntime.ifTime,
         done: false,
         carriedOver: false,
         parked: false,
@@ -2331,6 +2378,7 @@ async function buildBackup() {
       carriedOver: !!task.carriedOver,
       parked: !!task.parked,
       room: task.room || '',
+      ifTime: !!task.ifTime,
       sortIndex: task.sortIndex,
       createdAt: task.createdAt,
       photo: task.photoBlob ? await blobToBase64(task.photoBlob) : null,
@@ -2440,6 +2488,7 @@ $('#restoreFile').addEventListener('change', async (e) => {
       carriedOver: !!raw.carriedOver,
       parked: !!raw.parked,
       room: raw.room || '',
+      ifTime: !!raw.ifTime,
       sortIndex: typeof raw.sortIndex === 'number' ? raw.sortIndex : i,
       createdAt: raw.createdAt || Date.now()
     }));

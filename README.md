@@ -131,6 +131,14 @@ const ROOMS = ['Bathroom', 'Toilet', 'Kitchen', 'Bedroom', 'Living area', 'Guest
 
 The order in that line is the order they appear on the board.
 
+**How important.** Each task is either Normal or **If there's time left**.
+Optional ones keep their room, but they are shown in a section of their own at
+the very bottom of the board, with the room written on the card so the cleaner
+still knows where the job is. They are deliberately left out of the count at the
+top, and "All done. Thank you!" appears once the normal jobs are finished even
+if optional ones are still outstanding — the point being that they are extras,
+not a shortfall.
+
 **Tasks.** Three groups: Every visit (repeating), This visit only (one-off),
 and Not on the board. Edit, delete, or hold the six-dot grip at the right of a
 row and drag to reorder.
