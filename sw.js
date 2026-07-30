@@ -7,7 +7,7 @@
    When you change index.html, bump CACHE_VERSION below. That is what tells
    every iPad to pick up the new version. */
 
-const CACHE_VERSION = 'cleaning-board-v6';
+const CACHE_VERSION = 'cleaning-board-v7';
 
 const APP_SHELL = [
   './',
