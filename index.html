@@ -46,7 +46,7 @@ body{
   overscroll-behavior:none;
   overflow:hidden;
 }
-button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;touch-action:manipulation;}
 input,textarea{font:inherit;color:inherit;}
 [hidden]{display:none !important;}
 img{display:block;}
@@ -191,7 +191,10 @@ img{display:block;}
 #viewerNotes{margin-top:8px;font-size:20px;font-weight:400;color:var(--muted);line-height:1.5;}
 
 #doneBar{
-  flex:none;padding:0 calc(var(--sar) + 16px) calc(var(--sab) + 16px) calc(var(--sal) + 16px);
+  /* The extra bottom space keeps the button clear of the strip at the very
+     bottom of the screen, where iPadOS takes swipes for itself and taps can
+     go missing. */
+  flex:none;padding:0 calc(var(--sar) + 16px) calc(var(--sab) + 30px) calc(var(--sal) + 16px);
 }
 #doneBtn{
   width:100%;min-height:76px;border-radius:var(--r);
@@ -201,6 +204,13 @@ img{display:block;}
   transition:background .2s ease,border-color .2s ease;
 }
 #doneBtn.isDone{background:var(--green-deep);border-color:var(--green);}
+/* Something visible must happen the instant a finger lands, so a tap that
+   registered never looks like a tap that did not. */
+#doneBtn:active{background:#333942;}
+#doneBtn.isDone:active{background:#2F6644;}
+.stateBtn:active .ring{transform:scale(.88);}
+.iconBtn:active{opacity:.5;}
+.btn:active{filter:brightness(1.35);}
 #doneBtn .sub{font-size:17px;font-weight:500;opacity:.8;}
 
 /* ================= Admin ================= */
@@ -587,7 +597,7 @@ img{display:block;}
 /* Shown at the bottom of the admin screen. Bumped with every published change,
    so it is possible to tell at a glance which version an iPad is actually
    running rather than guessing. Keep it in step with CACHE_VERSION in sw.js. */
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 
 /* ---------------------------------------------------------------- 1. Helpers */
 
@@ -1165,13 +1175,53 @@ function renderProgress(ordered) {
   $('#setupHint').hidden = !!state.meta.pinHash;
 }
 
-async function toggleDone(id) {
-  const task = taskById(id);
-  if (!task) return;
-  task.done = !task.done;
-  await DB.putTask(task);
+/* Ticking a task rewrites its whole record, photo included, and on an iPad
+   that takes a moment. Waiting for the save before redrawing made the button
+   feel dead: she would tap again, and the second tap undid the first.
+
+   So the order is: change it in memory, redraw at once, then save behind her
+   back. If the save fails the change is rolled back and she is told, rather
+   than the screen quietly disagreeing with what is stored. */
+const writesInFlight = new Map(); // taskId -> true, or 'again' if it changed mid-save
+
+async function saveTask(task) {
+  if (writesInFlight.get(task.id)) { writesInFlight.set(task.id, 'again'); return; }
+  writesInFlight.set(task.id, true);
+  try {
+    await DB.putTask(task);
+    /* Tapped again while that was saving: write once more so what is stored
+       matches what she is looking at. */
+    while (writesInFlight.get(task.id) === 'again') {
+      writesInFlight.set(task.id, true);
+      await DB.putTask(task);
+    }
+  } finally {
+    writesInFlight.delete(task.id);
+  }
+}
+
+async function setDone(task, done) {
+  const previous = !!task.done;
+  if (previous === done) return;
+
+  task.done = done;
   renderBoard();
   if (state.viewer) renderViewer();
+
+  try {
+    await saveTask(task);
+  } catch (err) {
+    task.done = previous;
+    renderBoard();
+    if (state.viewer) renderViewer();
+    toast('That could not be saved. The iPad may be out of space.');
+  }
+}
+
+function toggleDone(id) {
+  const task = taskById(id);
+  if (!task) return Promise.resolve();
+  return setDone(task, !task.done);
 }
 
 /* -------------------------------------------------------------- 7. Big view */
@@ -1494,25 +1544,30 @@ $('#closeViewer').addEventListener('click', closeViewer);
    inside that pause would untick the task and then jump away regardless. */
 let advanceToken = 0;
 
-$('#doneBtn').addEventListener('click', async () => {
+/* Long enough to see "Done ✓" appear and tap Undo if it was a mistake, short
+   enough that working through the board still flows. */
+const AUTO_ADVANCE_MS = 1000;
+
+$('#doneBtn').addEventListener('click', () => {
   const v = state.viewer;
   const task = currentViewerTask();
   if (!task || !v) return;
 
   const token = ++advanceToken;
   const wasDone = !!task.done;
-  task.done = !wasDone;
-  await DB.putTask(task);
-  renderBoard();
-  renderViewer();
+
+  /* Not awaited: the label flips now, the save catches up. */
+  setDone(task, !wasDone);
 
   if (wasDone) return; // that tap was an undo, so stay put
+  advanceAfterPause(token, v, task);
+});
 
-  /* Marked done: pause, then move on to the next thing left to do. */
-  await sleep(600);
-  if (token !== advanceToken) return;          // tapped again: leave her here
+async function advanceAfterPause(token, v, task) {
+  await sleep(AUTO_ADVANCE_MS);
+  if (token !== advanceToken) return;            // tapped again: leave her here
   if (!state.viewer || state.viewer !== v) return;
-  if (task.done !== true) return;               // unticked in the meantime
+  if (task.done !== true) return;                // unticked in the meantime
 
   const remaining = v.order
     .map((id, i) => ({ id: id, i: i }))
@@ -1523,7 +1578,7 @@ $('#doneBtn').addEventListener('click', async () => {
   const ahead = remaining.find((entry) => entry.i > v.index);
   const next = ahead || remaining[0];
   goTo(next.i, 1);
-});
+}
 
 /* ------------------------------------------------------------------ 8. PIN */
 
